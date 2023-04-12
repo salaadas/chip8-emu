@@ -157,15 +157,128 @@ void emulate(void) // emulate one cycle
                 } break;
                 // return from subroutine
                 case 0x00EE: {
-                    sp--;
+                    --sp;
                     pc = stack[sp];
                     pc += 2;
                 } break;
             }
         } break;
+        // 0x1NNN jump to address NNN
         case 0x1000: {
             pc = opcode & 0x0FFF;
         } break;
+        // 0x2NNN call the subroutine at NNN
+        case 0x2000: {
+            stack[sp] = pc;
+            ++sp;
+            pc = opcode & 0x0FFF;
+        } break;
+        // 0x3XNN skip next instruction if Vx == NN
+        case 0x3000: {
+            if (V[(opcode & 0x0F00) >> 8] == (opcode & 0x00FF)) {
+                pc += 4;
+            } else {
+                pc += 2;
+            }
+        } break;
+        // 0x4XNN skip next instruction if Vx != NN
+        case 0x4000: {
+            if (V[(opcode & 0x0F00) >> 8] != (opcode & 0x00FF)) {
+                pc += 4;
+            } else {
+                pc += 2;
+            }
+        } break;
+        // 0x5XY0 skip next instruction if Vx == Vy
+        case 0x5000: {
+            if (V[(opcode & 0x0F00) >> 8] == (opcode & 0x00F0)) {
+                pc += 4;
+            } else {
+                pc += 2;
+            }
+        } break;
+        // 0x6XNN set Vx to NN
+        case 0x6000: {
+            V[(opcode & 0x0F00) >> 8] = opcode & 0x00FF;
+            pc += 2;
+        } break;
+        // 0x7XNN add NN to Vx (carry flag unchanged)
+        case 0x7000: {
+            uint16_t x = (opcode & 0x0F00) >> 8;
+            V[x] += (x == 15) ? 0 : (opcode & 0x00FF);
+            pc += 2;
+        } break;
+        // 0x8XY_
+        case 0x8000: {
+            switch(opcode & 0x000F) {
+                // 0x8XY0 set Vx = Vy
+                case 0x0000: {
+                    V[(opcode & 0x0F00) >> 8] = V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                } break;
+                // 0x8XY1 set Vx |= Vy (bitwise OR)
+                case 0x0001: {
+                    V[(opcode & 0x0F00) >> 8] |= V[(opcode & 0x00F0) >> 4];                    
+                    pc += 2;
+                } break;
+                // 0x8XY2 set Vx &= Vy (bitwise AND)
+                case 0x0002: {
+                    V[(opcode & 0x0F00) >> 8] &= V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                } break;
+                // 0x8XY3 set Vx ^= Vy (bitwise XOR)
+                case 0x0003: {
+                    V[(opcode & 0x0F00) >> 8] ^= V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                } break;
+                // 0x8XY4 set Vx += Vy
+                case 0x0004: {
+                    V[(opcode & 0x0F00) >> 8] += V[(opcode & 0x00F0) >> 4];
+                    // check for setting carry Vf
+                    if (V[(opcode & 0x0F00) >> 8] > (0xFF - V[(opcode & 0x00F0) >> 4])) {
+                        V[0xF] = 1; // if there is a carry
+                    } else {
+                        V[0xF] = 0;
+                    }
+                    pc += 2;
+                } break;
+                // 0x8XY5 set Vx -= Vy
+                case 0x0005: {
+                    if (V[(opcode & 0x00F0) >> 4] > V[(opcode & 0x0F00) >> 8]) {
+                        V[0xF] = 0; // set carry flag to 0 when there is a borrow
+                    } else {
+                        V[0xF] = 1; // set flag to 1 when there is not
+                    }
+                    V[(opcode & 0x0F00) >> 8] -= V[(opcode & 0x00F0) >> 4];
+                    pc += 2;
+                } break;
+                // 0x8XY6 Stores the least significant bit of VX in VF and then shifts VX to the right by 1
+                case 0x0006: {
+                    V[0xF] = V[(opcode & 0x0F00) >> 8] & 0x1;
+                    V[(opcode & 0x0F00) >> 8] >>= 1;
+                    pc += 2;
+                } break;
+                // 0x8XY7 Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there is not
+                case 0x0007: {
+                    uint16_t x = (opcode & 0x0F00) >> 8;
+                    uint16_t y = (opcode & 0x00F0) >> 4;
+                    if (V[x] > V[y]) {
+                        V[0xF] = 0; // there's a borrow
+                    } else {
+                        V[0xF] = 1;
+                    }
+                    V[x] = V[y] - V[x];
+                    pc += 2;
+                } break;
+                // 0x8XYE Stores the least significant bit of VX in VF and then shifts VX to the right by 1
+                case 0x000E: {
+                    V[0xF] = V[(opcode & 0x0F00) >> 8] >> 15;
+                    V[(opcode & 0x0F00) >> 8] <<= 1;
+                    pc += 2;
+                } break;
+            }
+        } break;
+        // 0xANNN set I to address NNN
         case 0xA000: {
             I = opcode & 0x0FFF;
             pc += 2;
