@@ -3,7 +3,9 @@
 #endif
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <SDL.h>
+#include <time.h>
 
 typedef enum {
     QUIT,
@@ -79,7 +81,8 @@ void init(void)
     opcode = 0;
     I = 0;
     sp = 0;
-
+    srand(time(NULL)); // set random seed
+    
     // clear the "screen" -- this is the screen of the VM
     for (int i = 0; i < screen_sz; ++i) {
         gfx[i] = 0;
@@ -276,6 +279,19 @@ void emulate(void) // emulate one cycle
                     V[(opcode & 0x0F00) >> 8] <<= 1;
                     pc += 2;
                 } break;
+
+                default: {
+                    fprintf(stderr, "ERROR: Unreachable, no opcodes of such %.4X\n", opcode);
+                    exit(3);
+                }
+            }
+        } break;
+        // 0x9XY0 Skips the next instruction if VX does not equal VY. (Usually the next instruction is a jump to skip a code block)
+        case 0x9000: {
+            if (V[(opcode & 0x0F00) >> 8] != V[(opcode & 0x00F0) >> 4]) {
+                pc += 4;
+            } else {
+                pc += 2;
             }
         } break;
         // 0xANNN set I to address NNN
@@ -283,6 +299,29 @@ void emulate(void) // emulate one cycle
             I = opcode & 0x0FFF;
             pc += 2;
         } break;
+        // 0xBNNN Jumps to the address NNN plus V0.
+        case 0xB000: {
+            pc = opcode & 0x0FFF + V[0];
+            pc += 2;
+        } break;
+        // 0xCXNN Sets VX to the result of a bitwise and operation on a random number (Typically: 0 to 255) and NN
+        case 0xC000: {
+            V[(opcode & 0x0F00) >> 8] = (rand() % 256) & (opcode & 0x00FF);
+            pc += 2;
+        } break;
+        // 0xDXYN
+        // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
+        // Each row of 8 pixels is read as bit-coded starting from memory location I;
+        // I value does not change after the execution of this instruction.
+        // As described above, VF is set to 1 if any screen pixels are flipped from set to unset
+        // when the sprite is drawn, and to 0 if that does not happen.
+        case 0xD000: {
+            pc += 2;
+        } break;
+        default: {
+            fprintf(stderr, "ERROR: Opcode unimplemented %.4X\n", opcode);
+            exit(1);
+        }
     }
 }
 
