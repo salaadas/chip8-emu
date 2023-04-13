@@ -40,7 +40,7 @@ uint8_t V[16]; // 15 8bit registers, the 16th carries flag
 uint16_t I; // index register
 uint16_t pc; // program counter value from (0x000) -> (0xFFF)
 uint8_t dt, st; // delay timer, sound timer
-uint8_t wait_key;
+uint8_t wait_key = -1;
 
 /*
 Memory map:
@@ -115,7 +115,7 @@ void init(void)
 
 bool load(const char *fp)
 {
-    // init();
+    init();
     printf("Loading ROM: %s\n", fp);
 
     FILE *rom = fopen(fp, "rb");
@@ -158,22 +158,21 @@ bool load(const char *fp)
 
 void emulate(void) // emulate one cycle
 {
-    if (wait_key != -1) {
-        for (int i = 0; i < 16; ++i) {
-            int status = is_keydown(i);
-            if (status) {
-                V[(uint8_t)wait_key] = i;
-                wait_key = -1;
-            }
-        }
-        if (wait_key != 1) {
-            return;
-        }
-    }
+    // if (wait_key != -1) {
+    //     for (int i = 0; i < 16; ++i) {
+    //         int status = is_keydown(i);
+    //         if (status) {
+    //             V[(uint8_t)wait_key] = i;
+    //             wait_key = -1;
+    //         }
+    //     }
+    //     if (wait_key != 1) {
+    //         return;
+    //     }
+    // }
 
-    // opcode = memory[pc] << 8 | memory[pc + 1];
-    opcode = 0xAC74;
-
+    opcode = memory[pc] << 8 | memory[pc + 1];
+    printf("opcode %d\n", opcode);
     switch (opcode & 0xF000) {
         case 0x0000: {
             switch(opcode & 0x00FF) {
@@ -439,13 +438,6 @@ void emulate(void) // emulate one cycle
     }
 }
 
-void draw()
-{
-    SDL_UpdateTexture(display, NULL, gfx, WIDTH * SCALE * sizeof(uint8_t));
-    SDL_RenderCopy(renderer, display, NULL, NULL);
-    SDL_RenderPresent(renderer);
-}
-
 int main(int argc, char** args)
 {
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
@@ -457,7 +449,7 @@ int main(int argc, char** args)
 
     display = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, WIDTH * SCALE, HEIGHT * SCALE);
 
-    if (!load("./roms/test_opcode.ch8")) {
+    if (!load("./roms/particle.ch8")) {
         fprintf(stderr, "ERROR: Could not read into the ROM provided\n");
         exit(1);
     }
@@ -471,15 +463,39 @@ int main(int argc, char** args)
         last_delta = SDL_GetTicks() - last_ticks;
         last_ticks = SDL_GetTicks();
 
+        emulate();
+
+        SDL_SetRenderDrawColor(renderer, 23, 100, 80, 255);
+        SDL_RenderClear(renderer);
         if (DrawFlag) {
-            draw();
+            SDL_Rect rect;
+            rect.x = rect.y = 0;
+            rect.w = rect.h = 64;
+            for (int i = 0; i < HEIGHT * SCALE; ++i) {
+                for (int j = 0; j < WIDTH * SCALE; ++j) {
+                    if (gfx[j + i * HEIGHT * SCALE] == 1) {
+                        rect.x = j * SCALE;
+                        rect.y = i * SCALE;
+                        rect.h = rect.w = 1;
+                        if (gfx[j + i * HEIGHT * SCALE] == 1) {
+                            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+                        } else {
+                            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                        }
+                        SDL_RenderDrawRect(renderer, &rect);
+                    }
+                }
+            }
+
             DrawFlag = false;
         }
+        SDL_RenderPresent(renderer);
 
         if (last_delta < (1000.0f / 60.0f)) {
             SDL_Delay((1000.0f / 60.0f) - last_delta);
         }
 
+        // handling event
         SDL_PollEvent(&event);
         switch(event.type) {
             case SDL_QUIT: {
@@ -488,6 +504,9 @@ int main(int argc, char** args)
         }
     }
 
+    // cleanup
+    SDL_DestroyTexture(display);
+    SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
 
