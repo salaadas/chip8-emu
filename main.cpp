@@ -39,6 +39,8 @@ uint8_t memory[4096]; // 4kb memory storing binary data of ROM
 uint8_t V[16]; // 15 8bit registers, the 16th carries flag
 uint16_t I; // index register
 uint16_t pc; // program counter value from (0x000) -> (0xFFF)
+uint8_t dt, st; // delay timer, sound timer
+// TODO: Add keyboard poller
 
 /*
 Memory map:
@@ -74,6 +76,13 @@ uint8_t keys[16] = {
 
 uint16_t stack[16];
 uint16_t sp;
+
+bool is_keydown(uint4_t key) {
+    const uint8_t *keystate = SDL_GetKeyboardState(NULL);
+    if (key < 0 || key > 15) return false;
+    real_key = keys[key];
+    return keystate[real_key];
+}
 
 void init(void)
 {
@@ -144,6 +153,19 @@ bool load(const char *fp)
 
 void emulate(void) // emulate one cycle
 {
+    if (wait_key != -1) {
+        for (int i = 0; i < 16; ++i) {
+            int status = is_keydown(i);
+            if (status) {
+                V[(uint4_t)wait_key] = i;
+                wait_key = -1
+            }
+        }
+        if (wait_key != 1) {
+            return;
+        }
+    }
+
     // opcode = memory[pc] << 8 | memory[pc + 1];
     opcode = 0xAC74;
 
@@ -207,7 +229,7 @@ void emulate(void) // emulate one cycle
         } break;
         // 0x7XNN add NN to Vx (carry flag unchanged)
         case 0x7000: {
-            uint16_t x = (opcode & 0x0F00) >> 8;
+            uint4_t x = (opcode & 0x0F00) >> 8;
             V[x] += (x == 15) ? 0 : (opcode & 0x00FF);
             pc += 2;
         } break;
@@ -263,8 +285,8 @@ void emulate(void) // emulate one cycle
                 } break;
                 // 0x8XY7 Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there is not
                 case 0x0007: {
-                    uint16_t x = (opcode & 0x0F00) >> 8;
-                    uint16_t y = (opcode & 0x00F0) >> 4;
+                    uint4_t x = (opcode & 0x0F00) >> 8;
+                    uint4_t y = (opcode & 0x00F0) >> 4;
                     if (V[x] > V[y]) {
                         V[0xF] = 0; // there's a borrow
                     } else {
@@ -310,13 +332,96 @@ void emulate(void) // emulate one cycle
             pc += 2;
         } break;
         // 0xDXYN
-        // Draws a sprite at coordinate (VX, VY) that has a width of 8 pixels and a height of N pixels.
-        // Each row of 8 pixels is read as bit-coded starting from memory location I;
-        // I value does not change after the execution of this instruction.
-        // As described above, VF is set to 1 if any screen pixels are flipped from set to unset
+        // Draws a sprite at coordinate [(VX, VY)] that has a width of [8] pixels and a height of [N] pixels.
+        // [Each row] of 8 pixels is read as bit-coded starting from [memory] location [I];
+        // [I] value [does not change] after the execution of this instruction.
+        // As described above, [VF] is set to 1 if any screen pixels are flipped from set to unset
         // when the sprite is drawn, and to 0 if that does not happen.
+        // Draw using the XOR operator 
         case 0xD000: {
+            uint4_t n = opcode & 0x000F;
+            uint4_t vx = (opcode & 0x0F00) >> 8;
+            uint4_t vy = (opcode & 0x00F0) >> 4;
+
+            V[0xF] = 0;
+
+            for (int dy = 0; dy < n; ++dy) {
+                uint8_t pixel = memory[I + dy];
+                for (int dx = 0; dx < 8; ++dx) {
+                    // scan through the pixels, one bit at a time
+                    if (pixel & (0x80 >> dx)) {
+                        size_t index = ((vy + dy) * WIDTH * SCALE) + (vx + dx) * SCALE;
+                        if (gfx[index] == 1) {
+                            V[0xF] = 1;
+                        }
+                        gfx[index] ^= 1;
+                    }
+                }
+            }
+            DrawFlag = true;
             pc += 2;
+        } break;
+        // 0xEX__
+        // Handling input
+        case 0xE000: {
+            // TODO: Add polling input for 0xEX__
+            switch (opcode & 0x00FF) {
+                // Skips the next instruction if the key stored in VX
+                // is PRESSED (usually the next instruction is a jump to skip a code block).
+                case 0x009E: {
+                    if (is_keydown(V[(opcode & 0x0F00) >> 8])) {
+                        pc += 4;
+                    } else {
+                        pc += 2;
+                    }
+                } break;
+                // Skips the next instruction if the key stored in VX
+                // is NOT PRESSED (usually the next instruction is a jump to skip a code block).
+                case 0x00A1: {
+                    if (!is_keydown(V[(opcode & 0x0F00) >> 8])) {
+                        pc += 4;
+                    } else {
+                        pc += 2;
+                    }
+                } break;
+                default: {
+                    fprintf(stderr, "ERROR: Unreachable, no opcodes of such %.4X\n", opcode);
+                    exit(3);
+                }
+            }
+        } break;
+        // 0xFX__
+        case 0xF000: {
+            switch (opcode & 0x00FF) {
+                // VX = dt
+                case 0x0007: {
+                    V[opcode & (0x0F00) >> 8] = dt;
+                } break;
+                case 0x000A: {
+                    wait_key = V[opcode & (0x0F00) >> 8];
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+                case 0x0007: {
+                    
+                } break;
+            }
         } break;
         default: {
             fprintf(stderr, "ERROR: Opcode unimplemented %.4X\n", opcode);
