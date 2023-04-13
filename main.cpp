@@ -40,7 +40,7 @@ uint8_t V[16]; // 15 8bit registers, the 16th carries flag
 uint16_t I; // index register
 uint16_t pc; // program counter value from (0x000) -> (0xFFF)
 uint8_t dt, st; // delay timer, sound timer
-// TODO: Add keyboard poller
+uint8_t wait_key;
 
 /*
 Memory map:
@@ -77,10 +77,15 @@ uint8_t keys[16] = {
 uint16_t stack[16];
 uint16_t sp;
 
-bool is_keydown(uint4_t key) {
+SDL_Window *window;
+SDL_Renderer *renderer;
+SDL_Texture *display;
+
+
+bool is_keydown(uint8_t key) {
     const uint8_t *keystate = SDL_GetKeyboardState(NULL);
     if (key < 0 || key > 15) return false;
-    real_key = keys[key];
+    const uint8_t real_key = keys[key];
     return keystate[real_key];
 }
 
@@ -91,7 +96,7 @@ void init(void)
     I = 0;
     sp = 0;
     srand(time(NULL)); // set random seed
-    
+
     // clear the "screen" -- this is the screen of the VM
     for (int i = 0; i < screen_sz; ++i) {
         gfx[i] = 0;
@@ -101,7 +106,7 @@ void init(void)
     for (int i = 0; i < 4096; ++i) {
         memory[i] = 0;
     }
-    
+
     // load font to memory header chunk
     for (int i = 0; i < 80; ++i) {
         memory[i] = fontset[i];
@@ -157,8 +162,8 @@ void emulate(void) // emulate one cycle
         for (int i = 0; i < 16; ++i) {
             int status = is_keydown(i);
             if (status) {
-                V[(uint4_t)wait_key] = i;
-                wait_key = -1
+                V[(uint8_t)wait_key] = i;
+                wait_key = -1;
             }
         }
         if (wait_key != 1) {
@@ -229,7 +234,7 @@ void emulate(void) // emulate one cycle
         } break;
         // 0x7XNN add NN to Vx (carry flag unchanged)
         case 0x7000: {
-            uint4_t x = (opcode & 0x0F00) >> 8;
+            uint8_t x = (opcode & 0x0F00) >> 8;
             V[x] += (x == 15) ? 0 : (opcode & 0x00FF);
             pc += 2;
         } break;
@@ -243,7 +248,7 @@ void emulate(void) // emulate one cycle
                 } break;
                 // 0x8XY1 set Vx |= Vy (bitwise OR)
                 case 0x0001: {
-                    V[(opcode & 0x0F00) >> 8] |= V[(opcode & 0x00F0) >> 4];                    
+                    V[(opcode & 0x0F00) >> 8] |= V[(opcode & 0x00F0) >> 4];
                     pc += 2;
                 } break;
                 // 0x8XY2 set Vx &= Vy (bitwise AND)
@@ -285,8 +290,8 @@ void emulate(void) // emulate one cycle
                 } break;
                 // 0x8XY7 Sets VX to VY minus VX. VF is set to 0 when there's a borrow, and 1 when there is not
                 case 0x0007: {
-                    uint4_t x = (opcode & 0x0F00) >> 8;
-                    uint4_t y = (opcode & 0x00F0) >> 4;
+                    uint8_t x = (opcode & 0x0F00) >> 8;
+                    uint8_t y = (opcode & 0x00F0) >> 4;
                     if (V[x] > V[y]) {
                         V[0xF] = 0; // there's a borrow
                     } else {
@@ -337,11 +342,11 @@ void emulate(void) // emulate one cycle
         // [I] value [does not change] after the execution of this instruction.
         // As described above, [VF] is set to 1 if any screen pixels are flipped from set to unset
         // when the sprite is drawn, and to 0 if that does not happen.
-        // Draw using the XOR operator 
+        // Draw using the XOR operator
         case 0xD000: {
-            uint4_t n = opcode & 0x000F;
-            uint4_t vx = (opcode & 0x0F00) >> 8;
-            uint4_t vy = (opcode & 0x00F0) >> 4;
+            uint8_t n = opcode & 0x000F;
+            uint8_t vx = (opcode & 0x0F00) >> 8;
+            uint8_t vy = (opcode & 0x00F0) >> 4;
 
             V[0xF] = 0;
 
@@ -400,27 +405,31 @@ void emulate(void) // emulate one cycle
                 case 0x000A: {
                     wait_key = V[opcode & (0x0F00) >> 8];
                 } break;
-                case 0x0007: {
-                    
+                case 0x0015: {
+                    dt = V[opcode & (0x0F00) >> 8];
                 } break;
-                case 0x0007: {
-                    
+                case 0x0018: {
+                    st = V[opcode & (0x0F00) >> 8];
                 } break;
-                case 0x0007: {
-                    
-                } break;
-                case 0x0007: {
-                    
-                } break;
-                case 0x0007: {
-                    
-                } break;
-                case 0x0007: {
-                    
-                } break;
-                case 0x0007: {
-                    
-                } break;
+                // case 0x0007: {
+
+                // } break;
+                // case 0x0007: {
+
+                // } break;
+                // case 0x0007: {
+
+                // } break;
+                // case 0x0007: {
+
+                // } break;
+                // case 0x0007: {
+
+                // } break;
+                default: {
+                    fprintf(stderr, "ERROR: Opcode unimplemented %.4X\n", opcode);
+                    exit(1);
+                }
             }
         } break;
         default: {
@@ -430,11 +439,15 @@ void emulate(void) // emulate one cycle
     }
 }
 
-int main(int argc, char** args) 
+void draw()
 {
-    SDL_Window *window;
-    SDL_Renderer *renderer;
+    SDL_UpdateTexture(display, NULL, gfx, WIDTH * SCALE * sizeof(uint8_t));
+    SDL_RenderCopy(renderer, display, NULL, NULL);
+    SDL_RenderPresent(renderer);
+}
 
+int main(int argc, char** args)
+{
     if (SDL_Init(SDL_INIT_EVERYTHING) < 0) {
         SDL_LogError(SDL_LOG_CATEGORY_VIDEO, "ERROR: Could not init window: %s\n", SDL_GetError());
     }
@@ -442,20 +455,37 @@ int main(int argc, char** args)
 
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
 
+    display = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, WIDTH * SCALE, HEIGHT * SCALE);
+
+    if (!load("./roms/test_opcode.ch8")) {
+        fprintf(stderr, "ERROR: Could not read into the ROM provided\n");
+        exit(1);
+    }
+
+    uint32_t last_ticks = SDL_GetTicks();
+    uint32_t last_delta = 0;
+
     State state = RUN;
     SDL_Event event;
     while (state) {
-        SDL_PollEvent(&event);
-        switch(event.type) {
-        case SDL_QUIT: {
-            state = QUIT;
-        } break;
+        last_delta = SDL_GetTicks() - last_ticks;
+        last_ticks = SDL_GetTicks();
+
+        if (DrawFlag) {
+            draw();
+            DrawFlag = false;
         }
 
-        SDL_SetRenderDrawColor(
-            renderer, 255, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        SDL_RenderPresent(renderer);
+        if (last_delta < (1000.0f / 60.0f)) {
+            SDL_Delay((1000.0f / 60.0f) - last_delta);
+        }
+
+        SDL_PollEvent(&event);
+        switch(event.type) {
+            case SDL_QUIT: {
+                state = QUIT;
+            } break;
+        }
     }
 
     SDL_DestroyWindow(window);
