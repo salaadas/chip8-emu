@@ -2,4 +2,9 @@
 
 set -xe
 
-g++ main.cpp -I/usr/local/include/SDL2 -std=c++11 -L/usr/local/lib -lSDL2 -o chip8
+CC=g++
+CXXFLAGS="-Wall -std=c++11 `pkg-config sdl2 --cflags`"
+LIBS=`pkg-config sdl2 --libs`
+SRC="main.cpp display.cpp chip.cpp"
+
+$CC $CXXFLAGS $SRC -o chip8 $LIBS
