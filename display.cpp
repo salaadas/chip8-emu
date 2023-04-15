@@ -10,7 +10,6 @@
 
 Display::Display(void)
 {
-    printf("%.2X %.2X %.2X %.2X\n", HEX_COLOR(0x33445566));
     window = SDL_CreateWindow("Chip 8 Emu", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WIDTH * PIXEL_SIZE, HEIGHT * PIXEL_SIZE, SDL_WINDOW_SHOWN);
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     screen_rect.x = screen_rect.y = 0;
@@ -40,7 +39,7 @@ void Display::update(const SDL_Rect &rect)
     SDL_RenderFillRect(renderer, &clear);
 
     SDL_SetRenderDrawColor(renderer, HEX_COLOR(0xaa33aaff));
-    for (size_t i = 0; i < rect.w * rect.h; ++i) {
+    for (int i = 0; i < rect.w * rect.h; ++i) {
         uint16_t pos_x = rect.x + i % rect.w;
         uint16_t pos_y = (rect.y + i / rect.w) * WIDTH;
 
@@ -72,9 +71,9 @@ uint8_t Display::blit(uint8_t *src, uint8_t size, uint8_t x, uint8_t y)
     for (size_t h = 0; h < size; ++h) {
         auto pixel = src[h];
         for (auto bit = 0; bit < 8; ++bit) {
-            // compare pixels against 0x10000000
+            // compare pixels against 0b10000000
             // to draw each bit one by one in the [pixel]
-            if (pixel & 0b10000000) {
+            if (pixel & (1 << 7)) {
                 pixel_cleared = setPixel(x + bit, y + h) || pixel_cleared;
             }
             pixel = pixel << 1; // iterate to the next bit

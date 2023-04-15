@@ -13,7 +13,7 @@ class Display {
 
     private:
     static const uint8_t WIDTH = 64;
-    static const uint8_t HEIGHT = 64;
+    static const uint8_t HEIGHT = 32;
     static const uint8_t PIXEL_SIZE = 12;
     SDL_Rect screen_rect;
 

@@ -41,5 +41,5 @@ class Chip {
 
     void fetchCode();
     uint16_t getDWord(uint16_t);
-    // void decode_failure(uint16_t);
+    void failure(uint16_t);
 };

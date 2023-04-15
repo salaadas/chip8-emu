@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "display.h"
+#include "chip.h"
 #include <map>
 
 int main(int argc, char **argv)
@@ -18,6 +19,9 @@ int main(int argc, char **argv)
 
     Display display;
     display.clear();
+
+    Chip chip(display);
+    chip.load((std::string)argv[1]);
 
     // keyboard
     // 1234 -> 123C
@@ -57,18 +61,27 @@ int main(int argc, char **argv)
                     if (key == SDLK_ESCAPE) running = false;
                     if (keymap.find(key) != keymap.end()) {
                         // handling keypress
+                        chip.pressKey(keymap[key]);
                     }
                 } break;
                 case SDL_KEYUP: {
                     const auto key = e.key.keysym.sym;
                     if (keymap.find(key) != keymap.end()) {
                         // handling key release
+                        chip.releaseKey(keymap[key]);
                     }
                 } break;
             }
         }
 
         // handling key wait
+        if (!chip.waitKey()) {
+            if(SDL_GetTicks() - last_tick > 16) {
+                chip.tick();
+                last_tick = SDL_GetTicks();
+            }
+            chip.step();
+        }
 
         auto end_tick = SDL_GetTicks();
         if (end_tick - start_tick < 1000 / SPEED) {
